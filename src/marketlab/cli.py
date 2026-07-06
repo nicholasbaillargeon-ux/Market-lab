@@ -4,11 +4,18 @@ from __future__ import annotations
 import argparse
 from datetime import date, datetime
 
-from .backtest import COST_PRESETS, ENGINES, resolve_strategy, run_backtest
+from .backtest import (
+    COST_PRESETS,
+    ENGINES,
+    resolve_portfolio_strategy,
+    resolve_strategy,
+    run_backtest,
+    run_portfolio_backtest,
+)
 from .config import get_settings
 from .data.ingest import ingest_symbols
 from .data.storage import ParquetStore
-from .strategies import REGISTRY
+from .strategies import PORTFOLIO_REGISTRY, REGISTRY
 
 
 def _date(s: str) -> date:
@@ -71,6 +78,33 @@ def cmd_backtest(args) -> int:
     return 0
 
 
+def cmd_portfolio(args) -> int:
+    settings = get_settings()
+    store = ParquetStore(settings.parquet_root)
+    bars = {}
+    for sym in args.symbols:
+        b = store.read_bars(sym, args.start, args.end)
+        if b.empty:
+            print(f"no bars for {sym}; run `marketlab ingest` first.")
+            return 1
+        bars[sym] = b
+
+    params = {"lookback": args.lookback} if args.lookback else {}
+    strat = resolve_portfolio_strategy(args.strategy, **params)
+    cost = COST_PRESETS[args.cost]()
+
+    engines = list(ENGINES) if args.engine == "both" else [args.engine]
+    print(f"\nportfolio [{' '.join(args.symbols)}]  {strat.name}  cost={args.cost}\n")
+    for eng in engines:
+        rep = run_portfolio_backtest(bars, strat, engine=eng, cost_model=cost)
+        span = rep.result.equity.index
+        print(f"[{eng}]  bars={len(span)}  "
+              f"[{span.min().date()} -> {span.max().date()}]")
+        print(_fmt_metrics(rep.metrics))
+        print()
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="marketlab", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -92,6 +126,16 @@ def main(argv=None) -> int:
     pb.add_argument("--fast", type=int, default=None)
     pb.add_argument("--slow", type=int, default=None)
     pb.set_defaults(func=cmd_backtest)
+
+    pp = sub.add_parser("portfolio", help="run a multi-asset strategy through the engine(s)")
+    pp.add_argument("--symbols", nargs="+", required=True)
+    pp.add_argument("--strategy", required=True, choices=sorted(PORTFOLIO_REGISTRY))
+    pp.add_argument("--engine", default="both", choices=[*ENGINES, "both"])
+    pp.add_argument("--cost", default="retail", choices=sorted(COST_PRESETS))
+    pp.add_argument("--start", type=_date, default=None)
+    pp.add_argument("--end", type=_date, default=None)
+    pp.add_argument("--lookback", type=int, default=None, help="vol window for inverse_vol")
+    pp.set_defaults(func=cmd_portfolio)
 
     args = p.parse_args(argv)
     return args.func(args)

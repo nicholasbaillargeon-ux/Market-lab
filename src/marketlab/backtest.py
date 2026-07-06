@@ -6,12 +6,22 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from .engine import CostModel, run_event_driven, run_vectorized
+from .engine import (
+    CostModel,
+    run_event_driven,
+    run_event_driven_portfolio,
+    run_vectorized,
+    run_vectorized_portfolio,
+)
 from .engine.types import BacktestResult
 from .metrics import summary
-from .strategies import REGISTRY, Strategy
+from .strategies import PORTFOLIO_REGISTRY, REGISTRY, PortfolioStrategy, Strategy
 
 ENGINES = {"vectorized": run_vectorized, "event_driven": run_event_driven}
+PORTFOLIO_ENGINES = {
+    "vectorized": run_vectorized_portfolio,
+    "event_driven": run_event_driven_portfolio,
+}
 
 COST_PRESETS = {
     "zero": CostModel.zero,
@@ -44,6 +54,33 @@ def run_backtest(
         raise ValueError(f"unknown engine {engine!r}; have {sorted(ENGINES)}")
     weights = strategy.target_weights(bars)
     result = ENGINES[engine](
+        bars, weights, cost_model or CostModel.zero(), initial_cash=initial_cash
+    )
+    return BacktestReport(result=result, metrics=summary(result))
+
+
+def resolve_portfolio_strategy(name: str, **params) -> PortfolioStrategy:
+    if name not in PORTFOLIO_REGISTRY:
+        raise ValueError(
+            f"unknown portfolio strategy {name!r}; have {sorted(PORTFOLIO_REGISTRY)}"
+        )
+    return PORTFOLIO_REGISTRY[name](**params)
+
+
+def run_portfolio_backtest(
+    bars: dict[str, pd.DataFrame],
+    strategy: PortfolioStrategy,
+    *,
+    engine: str = "event_driven",
+    cost_model: CostModel | None = None,
+    initial_cash: float = 100_000.0,
+) -> BacktestReport:
+    if engine not in PORTFOLIO_ENGINES:
+        raise ValueError(
+            f"unknown engine {engine!r}; have {sorted(PORTFOLIO_ENGINES)}"
+        )
+    weights = strategy.target_weights(bars)
+    result = PORTFOLIO_ENGINES[engine](
         bars, weights, cost_model or CostModel.zero(), initial_cash=initial_cash
     )
     return BacktestReport(result=result, metrics=summary(result))
