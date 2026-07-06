@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: marketlab-pg
+    environment:
+      POSTGRES_USER: marketlab
+      POSTGRES_PASSWORD: marketlab
+      POSTGRES_DB: marketlab
+    ports:
+      - "5432:5432"
+    volumes:
+      - marketlab-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketlab"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  marketlab-pgdata:
