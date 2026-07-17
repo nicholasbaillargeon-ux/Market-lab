@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 
 import plotly.graph_objects as go
-from dash import Dash, Input, Output, State, dcc, html
+from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
 from dash.exceptions import PreventUpdate
 
 from .backtest import COST_PRESETS
@@ -98,6 +98,53 @@ def _stat(label, value, sub, dot, status):
     )
 
 
+def _help():
+    """A hover/focus 'How to read this' pill that reveals a compact legend."""
+    def _line(color, name, desc, dash=False):
+        return html.Div(
+            [html.Span(style={"display": "inline-block", "width": "18px",
+                              "borderTop": f"2px {'dashed' if dash else 'solid'} {color}",
+                              "marginRight": "9px", "verticalAlign": "middle"}),
+             html.Span(name, style={"color": color, "fontWeight": 600}),
+             html.Span(f" — {desc}", style={"color": INK2})],
+            style={"marginBottom": "7px", "fontSize": "12.5px", "lineHeight": "1.4"})
+
+    return html.Span(
+        [
+            html.Span(
+                [html.Span("?", style={"display": "inline-block", "width": "15px",
+                                       "height": "15px", "borderRadius": "50%",
+                                       "border": f"1px solid {MUTED}", "color": MUTED,
+                                       "fontSize": "10px", "fontWeight": 700,
+                                       "textAlign": "center", "lineHeight": "15px",
+                                       "marginRight": "6px"}),
+                 "How to read this"],
+                style={"color": MUTED, "fontSize": "12px", "fontWeight": 600,
+                       "border": f"1px solid {HAIR}", "borderRadius": "999px",
+                       "padding": "3px 10px 3px 8px", "whiteSpace": "nowrap"}),
+            html.Div(
+                [_line(BLUE, "Net (blue)",
+                       "the only curve you could actually trade — real signals + costs"),
+                 _line(MUTED, "Gross (grey)",
+                       "honest signals, but zero trading costs — a ceiling"),
+                 _line(AMBER, "Look-ahead (amber)",
+                       "trades on prices it couldn't have known yet — the lie", dash=True),
+                 html.Div(style={"borderTop": f"1px solid {HAIR}", "margin": "9px 0 8px"}),
+                 html.Div(
+                     [html.B("Cost drag", style={"color": INK2}),
+                      html.Span(" how much costs erase · ", style={"color": MUTED}),
+                      html.B("Look-ahead Δ", style={"color": INK2}),
+                      html.Span(" the fantasy edge · ", style={"color": MUTED}),
+                      html.B("Parity gap", style={"color": INK2}),
+                      html.Span(" two engines agree ⇒ the fast number is trustworthy",
+                                style={"color": MUTED})],
+                     style={"fontSize": "12px", "lineHeight": "1.5"})],
+                className="ml-help-pop"),
+        ],
+        className="ml-help", tabIndex=0, style={"marginLeft": "6px"},
+    )
+
+
 def _ctl(label, control):
     return html.Div([html.Label(label, style={"color": MUTED, "fontSize": "12px",
                                               "display": "block", "marginBottom": "6px"}),
@@ -105,35 +152,69 @@ def _ctl(label, control):
 
 
 _DD = {"background": SURFACE, "color": INK, "border": f"1px solid {HAIR}"}
+_NUM = {"background": SURFACE, "color": INK, "border": f"1px solid {HAIR}",
+        "borderRadius": "7px", "padding": "5px 8px", "width": "58px",
+        "fontVariantNumeric": "tabular-nums", "fontFamily": "inherit", "fontSize": "13px"}
+
+
+def _numbox(label, ident, value):
+    """A dark-themed number input, tied to the RangeSlider, with a small caption."""
+    return html.Div(
+        [dcc.Input(id=ident, type="number", min=5, max=250, step=1, value=value,
+                   debounce=True, style=_NUM),
+         html.Span(label, style={"color": MUTED, "fontSize": "11px",
+                                 "textTransform": "uppercase", "letterSpacing": ".5px"})],
+        style={"display": "flex", "alignItems": "center", "gap": "6px"},
+    )
 
 app = Dash(__name__, title="marketlab — why backtests lie",
            update_title=None, suppress_callback_exceptions=True)
 server = app.server  # for gunicorn / systemd
 
-# dcc.Dropdown / RangeSlider render their internals via bundled react-select /
-# rc-slider with fixed class names; inline `style` only reaches the outer div, so
-# the value + menu text defaults to dark-on-... white, i.e. invisible on our dark
-# surface. Style those internals explicitly here so the controls are legible.
+# Dash 3 ships native Dropdown/Slider components (a <button> popover and a
+# custom slider -- no more react-select / rc-slider), and their default theme is
+# LIGHT: white control + menu backgrounds, dark option text. On our dark surface
+# that reads as white-on-white boxes with invisible text. Override the (stable)
+# `dash-*` class names here so every control renders dark-surface + legible.
 app.index_string = """<!DOCTYPE html>
 <html>
 <head>
 {%metas%}<title>{%title%}</title>{%favicon%}{%css%}
 <style>
-  /* dcc.Dropdown uses react-select with emotion's runtime-generated class
-     names, so we can't target its parts by name. Scope by a class we control
-     and force every descendant instead -- dark surface, white text, legible. */
-  .ml-dd, .ml-dd * { color:#ffffff !important; }
-  .ml-dd div { background-color:#1a1a19 !important; }
-  .ml-dd div:hover { background-color:#222b36 !important; }
-  .ml-dd input { color:#ffffff !important; }
-  .ml-dd svg { fill:#898781 !important; }
-  /* RangeSlider (rc-slider keeps stable class names) */
-  .rc-slider-rail { background-color:#2c2c2a !important; }
-  .rc-slider-track { background-color:#3987e5 !important; }
-  .rc-slider-handle { border-color:#3987e5 !important; background-color:#1a1a19 !important; opacity:1 !important; }
-  .rc-slider-mark-text { color:#c3c2b7 !important; }
-  .rc-slider-tooltip-inner { background-color:#24303f !important; color:#ffffff !important; box-shadow:none !important; }
-  .rc-slider-tooltip-arrow { border-top-color:#24303f !important; }
+  /* --- Dropdown: closed trigger button --- */
+  .dash-dropdown { background-color:#1a1a19 !important; color:#ffffff !important;
+                   border:1px solid rgba(255,255,255,0.10) !important; }
+  .dash-dropdown-trigger, .dash-dropdown-value,
+  .dash-dropdown-value-item, .dash-dropdown-value-item * { color:#ffffff !important; }
+  .dash-dropdown-trigger-icon { fill:#898781 !important; color:#898781 !important; }
+  /* --- Dropdown: open popover + search + options --- */
+  .dash-dropdown-content, .dash-dropdown-wrapper,
+  .dash-dropdown-search-container { background-color:#1a1a19 !important; }
+  .dash-dropdown-search { color:#ffffff !important; }
+  .dash-dropdown-search::placeholder { color:#898781 !important; }
+  .dash-dropdown-search-icon { fill:#898781 !important; color:#898781 !important; }
+  .dash-options-list-option, .dash-options-list-option-wrapper,
+  .dash-options-list-option-text { color:#c3c2b7 !important; }
+  .dash-options-list-option:hover { background-color:#222b36 !important; }
+  .dash-options-list-option:hover,
+  .dash-options-list-option:hover .dash-options-list-option-text { color:#ffffff !important; }
+  .dash-options-list-option.selected,
+  .dash-options-list-option.selected .dash-options-list-option-text { color:#3987e5 !important; }
+  /* --- 'How to read this' hover legend --- */
+  .ml-help { position:relative; display:inline-block; cursor:help; vertical-align:middle; }
+  .ml-help-pop { position:absolute; top:132%; left:0; z-index:50; width:340px;
+    background:#1a1a19; border:1px solid rgba(255,255,255,0.10); border-radius:10px;
+    padding:13px 15px; box-shadow:0 12px 34px rgba(0,0,0,0.55);
+    opacity:0; visibility:hidden; transform:translateY(-4px);
+    transition:opacity .12s ease, transform .12s ease; }
+  .ml-help:hover .ml-help-pop, .ml-help:focus-within .ml-help-pop {
+    opacity:1; visibility:visible; transform:translateY(0); }
+  /* --- RangeSlider --- */
+  .dash-slider-track { background-color:#2c2c2a !important; }
+  .dash-slider-range { background-color:#3987e5 !important; }
+  .dash-slider-thumb { border-color:#3987e5 !important; background-color:#1a1a19 !important; opacity:1 !important; }
+  .dash-slider-mark, .dash-slider-mark * { color:#c3c2b7 !important; }
+  .dash-slider-tooltip, .dash-slider-tooltip * { background-color:#24303f !important; color:#ffffff !important; box-shadow:none !important; }
 </style>
 </head>
 <body>{%app_entry%}<footer>{%config%}{%scripts%}{%renderer%}</footer></body>
@@ -158,9 +239,11 @@ app.layout = html.Div(
                             "fontWeight": 600, "border": f"1px solid {BLUE}",
                             "borderRadius": "999px", "padding": "3px 10px"}),
                     ]),
-                    html.Div("Pick a symbol, strategy, and cost model. The chart shows "
-                             "three equity curves — only one is real.",
-                             style={"color": INK2, "marginTop": "6px", "fontSize": "14px"}),
+                    html.Div(
+                        [html.Span("Pick a symbol, strategy, and cost model. The chart shows "
+                                   "three equity curves — only one is real."),
+                         _help()],
+                        style={"color": INK2, "marginTop": "6px", "fontSize": "14px"}),
                 ]),
                 html.Div(id="universe", style={"color": MUTED, "fontSize": "13px",
                                                "fontVariantNumeric": "tabular-nums",
@@ -181,10 +264,20 @@ app.layout = html.Div(
                                                   id="strategy", clearable=False, className="ml-dd",
                                                   style={**_DD, "width": "190px"})),
                     _ctl("Fast / slow window", html.Div(
-                        dcc.RangeSlider(5, 250, value=[50, 200], id="windows",
-                                        marks={5: "5", 125: "125", 250: "250"},
-                                        tooltip={"placement": "bottom", "always_visible": True}),
-                        style={"width": "280px", "paddingTop": "4px"})),
+                        # Tooltips go above the track: `marks` already occupy the
+                        # band below it, and a bottom-placed always-visible
+                        # tooltip lands on top of them.
+                        [dcc.RangeSlider(5, 250, value=[50, 200], id="windows",
+                                         marks={5: "5", 125: "125", 250: "250"},
+                                         tooltip={"placement": "top", "always_visible": True}),
+                         html.Div(
+                             [_numbox("fast", "fast_in", 50),
+                              _numbox("slow", "slow_in", 200)],
+                             style={"display": "flex", "gap": "16px", "marginTop": "10px"}),
+                         ],
+                        # Headroom for the now top-placed tooltip, so it clears
+                        # the control's label instead of riding up into it.
+                        style={"width": "280px", "paddingTop": "24px"})),
                     _ctl("Cost model", dcc.Dropdown(sorted(COST_PRESETS), "retail", id="cost",
                                                     clearable=False, className="ml-dd",
                                                     style={**_DD, "width": "170px"})),
@@ -209,14 +302,21 @@ app.layout = html.Div(
 )
 
 
-def _layout_fig(title, height, ytitle, pct=False):
+def _layout_fig(title, height, ytitle, pct=False, legend=True):
+    # The title and the horizontal legend both sit above the plot, left-aligned,
+    # so they need separate bands: anchor each to an explicit edge (title to the
+    # container top, legend to the plot top) and reserve enough top margin for
+    # both. Mixing the two reference frames is what stacked them on one line.
+    top = 78 if legend else 46
     fig = go.Figure()
     fig.update_layout(
-        title=dict(text=title, font=dict(size=15, color=INK2), x=0.01, y=0.96),
+        title=dict(text=title, font=dict(size=15, color=INK2), x=0.01, xref="paper",
+                   y=1, yanchor="top", yref="container", pad=dict(t=14)),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE, font=dict(color=MUTED, family=FONT),
-        margin=dict(l=62, r=24, t=44, b=36), height=height,
-        hovermode="x unified", showlegend=True,
-        legend=dict(orientation="h", y=1.12, x=0, font=dict(color=INK2, size=12),
+        margin=dict(l=62, r=24, t=top, b=36), height=height,
+        hovermode="x unified", showlegend=legend,
+        legend=dict(orientation="h", yref="paper", y=1, yanchor="bottom",
+                    x=0, xref="paper", font=dict(color=INK2, size=12),
                     bgcolor="rgba(0,0,0,0)"),
     )
     fig.update_yaxes(title=dict(text=ytitle, font=dict(size=12)), gridcolor=GRID,
@@ -246,6 +346,25 @@ def search_symbols(search, current):
 def universe_count(_):
     return [html.Span(f"{len(_all_symbols()):,}", style={"color": INK, "fontWeight": 700}),
             html.Span(" symbols in the lake", style={"color": MUTED})]
+
+
+# ---- keep the slider and the two number inputs in lock-step ----
+@app.callback(
+    Output("windows", "value"), Output("fast_in", "value"), Output("slow_in", "value"),
+    Input("windows", "value"), Input("fast_in", "value"), Input("slow_in", "value"),
+    prevent_initial_call=True,
+)
+def sync_windows(win, fast_in, slow_in):
+    if ctx.triggered_id == "windows":
+        # slider moved -> mirror its two handles into the number boxes
+        return no_update, int(win[0]), int(win[1])
+    # a number box was edited -> clamp, order (fast <= slow), drive the slider
+    if fast_in is None or slow_in is None:
+        raise PreventUpdate
+    lo, hi = sorted((int(fast_in), int(slow_in)))
+    lo = max(5, min(250, lo))
+    hi = max(5, min(250, hi))
+    return [lo, hi], lo, hi
 
 
 @app.callback(
@@ -319,8 +438,7 @@ def update(symbol, strategy, windows, cost):
     peak = ev.equity.cummax()
     dd = ev.equity / peak - 1.0
     uw = _layout_fig("drawdown — the pain you'd actually have felt (net)", 230,
-                     "drawdown", pct=True)
-    uw.update_layout(showlegend=False)
+                     "drawdown", pct=True, legend=False)
     uw.add_trace(go.Scatter(x=dd.index, y=dd, line=dict(color=CRIT, width=1.5),
                             fill="tozeroy", fillcolor="rgba(208,59,59,0.15)",
                             hovertemplate="%{y:.1%}<extra>drawdown</extra>"))
