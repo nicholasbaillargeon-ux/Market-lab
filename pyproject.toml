@@ -33,6 +33,12 @@ marketlab = "marketlab.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The landing page is served at "/", so it has to ship inside the wheel --
+# setuptools would otherwise package only the .py files and the container
+# would 404 on the homepage.
+[tool.setuptools.package-data]
+marketlab = ["static/*.html"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]

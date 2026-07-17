@@ -14,10 +14,12 @@ Run:  python -m marketlab.webapp   (serves on 0.0.0.0:8060)
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import plotly.graph_objects as go
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
 from dash.exceptions import PreventUpdate
+from flask import send_from_directory
 
 from .backtest import COST_PRESETS
 from .config import get_settings
@@ -167,9 +169,20 @@ def _numbox(label, ident, value):
         style={"display": "flex", "alignItems": "center", "gap": "6px"},
     )
 
+APP_BASE = "/app/"  # the dashboard; "/" is the landing page
+
 app = Dash(__name__, title="marketlab — why backtests lie",
-           update_title=None, suppress_callback_exceptions=True)
+           update_title=None, suppress_callback_exceptions=True,
+           url_base_pathname=APP_BASE)
 server = app.server  # for gunicorn / systemd
+
+_STATIC = Path(__file__).parent / "static"
+
+
+@server.route("/")
+def landing():
+    """The marketing page. Its call-to-action links through to APP_BASE."""
+    return send_from_directory(_STATIC, "landing.html")
 
 # Dash 3 ships native Dropdown/Slider components (a <button> popover and a
 # custom slider -- no more react-select / rc-slider), and their default theme is
