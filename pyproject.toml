@@ -25,7 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
-web = ["dash>=2.16", "plotly>=5.20"]
+web = ["dash>=2.16", "plotly>=5.20", "gunicorn>=21.2"]
 
 [project.scripts]
 marketlab = "marketlab.cli:main"

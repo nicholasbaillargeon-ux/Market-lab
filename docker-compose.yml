@@ -1,4 +1,27 @@
 services:
+  app:
+    build: .
+    image: marketlab:latest
+    container_name: marketlab-app
+    ports:
+      - "${MARKETLAB_PORT:-8060}:8060"
+    environment:
+      # Inside the compose network Postgres answers to its service name, not
+      # localhost — this overrides the DSN in .env, which is written for a host
+      # process talking to the published port.
+      MARKETLAB_PG_DSN: postgresql://marketlab:marketlab@postgres:5432/marketlab
+      MARKETLAB_PARQUET_ROOT: /app/data/lake
+      MARKETLAB_PROVIDER: ${MARKETLAB_PROVIDER:-yfinance}
+      POLYGON_API_KEY: ${POLYGON_API_KEY:-}
+    volumes:
+      # Named volume, not a bind mount: the container user is uid 1000 and a
+      # bind mount would inherit the host directory's ownership.
+      - marketlab-lake:/app/data/lake
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   postgres:
     image: postgres:16-alpine
     container_name: marketlab-pg
@@ -18,3 +41,4 @@ services:
 
 volumes:
   marketlab-pgdata:
+  marketlab-lake:
