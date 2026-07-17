@@ -264,20 +264,17 @@ app.layout = html.Div(
                                                   id="strategy", clearable=False, className="ml-dd",
                                                   style={**_DD, "width": "190px"})),
                     _ctl("Fast / slow window", html.Div(
-                        # Tooltips go above the track: `marks` already occupy the
-                        # band below it, and a bottom-placed always-visible
-                        # tooltip lands on top of them.
+                        # marks=None is load-bearing: the slider auto-generates
+                        # marks when the prop is omitted. The number boxes below
+                        # carry both values, so the track stays bare.
                         [dcc.RangeSlider(5, 250, value=[50, 200], id="windows",
-                                         marks={5: "5", 125: "125", 250: "250"},
-                                         tooltip={"placement": "top", "always_visible": True}),
+                                         marks=None),
                          html.Div(
                              [_numbox("fast", "fast_in", 50),
                               _numbox("slow", "slow_in", 200)],
                              style={"display": "flex", "gap": "16px", "marginTop": "10px"}),
                          ],
-                        # Headroom for the now top-placed tooltip, so it clears
-                        # the control's label instead of riding up into it.
-                        style={"width": "280px", "paddingTop": "24px"})),
+                        style={"width": "280px", "paddingTop": "4px"})),
                     _ctl("Cost model", dcc.Dropdown(sorted(COST_PRESETS), "retail", id="cost",
                                                     clearable=False, className="ml-dd",
                                                     style={**_DD, "width": "170px"})),
