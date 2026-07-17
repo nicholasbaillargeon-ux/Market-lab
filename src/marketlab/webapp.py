@@ -213,8 +213,6 @@ app.index_string = """<!DOCTYPE html>
   .dash-slider-track { background-color:#2c2c2a !important; }
   .dash-slider-range { background-color:#3987e5 !important; }
   .dash-slider-thumb { border-color:#3987e5 !important; background-color:#1a1a19 !important; opacity:1 !important; }
-  .dash-slider-mark, .dash-slider-mark * { color:#c3c2b7 !important; }
-  .dash-slider-tooltip, .dash-slider-tooltip * { background-color:#24303f !important; color:#ffffff !important; box-shadow:none !important; }
 </style>
 </head>
 <body>{%app_entry%}<footer>{%config%}{%scripts%}{%renderer%}</footer></body>
