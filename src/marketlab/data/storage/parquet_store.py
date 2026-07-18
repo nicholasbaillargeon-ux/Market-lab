@@ -7,12 +7,19 @@ timestamp index so re-ingesting an overlapping range is idempotent.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pandas as pd
 
 from ..bars import COLUMNS, empty_bars, validate
 from .base import BarStore
+
+# A ticker symbol used to build the on-disk partition path. Constrained to an
+# allowlist so a caller-supplied symbol (the web UI forwards client-controlled
+# Dash callback state straight to read_bars) cannot contain "/" or ".." and
+# traverse out of the lake root when it is joined into a filesystem path.
+_SAFE_SYMBOL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-]{0,23}$")
 
 
 class ParquetStore(BarStore):
@@ -21,6 +28,8 @@ class ParquetStore(BarStore):
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, symbol: str) -> Path:
+        if not _SAFE_SYMBOL.match(symbol or ""):
+            raise ValueError(f"invalid symbol: {symbol!r}")
         d = self.root / f"symbol={symbol.upper()}"
         d.mkdir(parents=True, exist_ok=True)
         return d / f"{symbol.upper()}.parquet"
