@@ -13,6 +13,7 @@ Run:  python -m marketlab.webapp   (serves on 0.0.0.0:8060)
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -54,12 +55,64 @@ def _ret(x: float) -> str:
     """Format a total return: a wealth multiple past +1000%, else a percentage."""
     return f"{1 + x:,.0f}×" if abs(x) >= 10 else f"{x:+.1%}"
 
+# ---- optional Redis cache (shared across gunicorn workers) ----
+# The combined image sets REDIS_URL and installs redis alongside the portfolio
+# app, so both apps share one cache. Standalone, or if Redis is unreachable,
+# this degrades silently to the in-process _cache below. Never raises.
+try:
+    import redis as _redislib
+except ImportError:  # redis not installed in a minimal standalone run
+    _redislib = None
+
+_redis_client = None
+_redis_ready = False
+
+
+def _redis():
+    """Lazily build a Redis client, or return None if unavailable."""
+    global _redis_client, _redis_ready
+    if _redis_ready:
+        return _redis_client
+    _redis_ready = True
+    url = os.environ.get("REDIS_URL")
+    if url and _redislib is not None:
+        try:
+            c = _redislib.Redis.from_url(
+                url, socket_timeout=2, socket_connect_timeout=2,
+                decode_responses=True,
+            )
+            c.ping()
+            _redis_client = c
+        except Exception:
+            _redis_client = None
+    return _redis_client
+
+
 _cache: dict = {"syms": []}
+_SYMS_KEY = "marketlab:symbols"
+_SYMS_TTL = 3600  # the lake's symbol set barely moves; refresh hourly
 
 
 def _all_symbols() -> list[str]:
+    """The tradeable universe (ex-SYNTH). Cached in Redis so the ~12k-entry lake
+    scan is shared across workers rather than repeated per worker per call."""
+    r = _redis()
+    if r is not None:
+        try:
+            hit = r.get(_SYMS_KEY)
+            if hit:
+                _cache["syms"] = json.loads(hit)
+                return _cache["syms"]
+        except Exception:
+            pass  # fall through to a direct scan
     syms = [s for s in STORE.symbols() if s != "SYNTH"]
-    _cache["syms"] = syms or STORE.symbols()
+    syms = syms or STORE.symbols()
+    _cache["syms"] = syms
+    if r is not None:
+        try:
+            r.setex(_SYMS_KEY, _SYMS_TTL, json.dumps(syms))
+        except Exception:
+            pass
     return _cache["syms"]
 
 
