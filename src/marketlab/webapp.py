@@ -339,21 +339,52 @@ app.layout = html.Div(
             ),
             marginTop="20px",
         ),
-        # KPI row
-        html.Div(id="cards", style={"display": "flex", "gap": "14px",
-                                    "flexWrap": "wrap", "margin": "18px 0"}),
-        # charts
-        _panel(dcc.Graph(id="equity", config={"displayModeBar": False}), padding="8px"),
-        html.Div(style={"height": "14px"}),
-        _panel(dcc.Graph(id="drawdown", config={"displayModeBar": False}), padding="8px"),
-        # verdict
-        html.Div(id="verdict", style={"marginTop": "16px"}),
+        # KPI row + charts + verdict, all behind one spinner: the recompute
+        # (Parquet read + two backtest engines) is slow enough on long histories
+        # to want feedback rather than a frozen-looking page.
+        dcc.Loading(
+            type="default", color=BLUE,
+            children=[
+                # KPI row
+                html.Div(id="cards", style={"display": "flex", "gap": "14px",
+                                            "flexWrap": "wrap", "margin": "18px 0"}),
+                # charts
+                _panel(dcc.Graph(id="equity", config={"displayModeBar": False}), padding="8px"),
+                html.Div(style={"height": "14px"}),
+                _panel(dcc.Graph(id="drawdown", config={"displayModeBar": False}), padding="8px"),
+                # verdict
+                html.Div(id="verdict", style={"marginTop": "16px"}),
+            ],
+        ),
         html.Div("marketlab · Parquet + Postgres · vectorized ∥ event-driven · "
                  "github.com/nicholasbaillargeon-ux/Market-lab",
                  style={"color": MUTED, "fontSize": "12px", "marginTop": "26px",
                         "borderTop": f"1px solid {HAIR}", "paddingTop": "14px"}),
     ],
 )
+
+
+def _showcase_pill():
+    """A fixed '← Showcase' pill home to the combined-deployment root, matching
+    the portfolio app's button and the one on our own landing page. As a native
+    Dash element it survives the SPA's re-renders without the landing page's JS
+    re-injection hack."""
+    return html.A(
+        "← Showcase", href="/", title="Back to the showcase",
+        style={"position": "fixed", "bottom": "16px", "left": "16px",
+               "zIndex": 2147483647,
+               "font": "600 13px/1 -apple-system,BlinkMacSystemFont,sans-serif",
+               "color": "#12332a", "background": "rgba(244,239,227,.94)",
+               "padding": "9px 15px", "border": "1px solid rgba(18,51,42,.25)",
+               "borderRadius": "999px", "textDecoration": "none",
+               "boxShadow": "0 2px 10px rgba(0,0,0,.18)"},
+    )
+
+
+# Only behind the combined proxy (BASE != "/"), where a showcase owns the root.
+# Standalone, "/" is just this app's own landing, so the pill would mislead.
+if BASE != "/":
+    app.layout.children.append(_showcase_pill())
 
 
 def _layout_fig(title, height, ytitle, pct=False, legend=True):
