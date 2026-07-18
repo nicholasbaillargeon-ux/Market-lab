@@ -321,6 +321,16 @@ app.index_string = """<!DOCTYPE html>
     transition:opacity .12s ease, transform .12s ease; }
   .ml-help:hover .ml-help-pop, .ml-help:focus-within .ml-help-pop {
     opacity:1; visibility:visible; transform:translateY(0); }
+  /* Phones: the 340px legend overhangs the right edge, and because it stays in
+     flow while hidden it widened the whole page (393 -> 433). Dock it as a
+     bottom sheet instead. Tap still opens it -- the pill carries tabIndex=0,
+     so :focus-within covers touch, where :hover never fires. */
+  @media (max-width: 720px) {
+    .ml-help-pop { position:fixed; top:auto; bottom:14px; left:14px; right:14px;
+      width:auto; transform:translateY(6px); }
+    .ml-help:hover .ml-help-pop, .ml-help:focus-within .ml-help-pop {
+      transform:translateY(0); }
+  }
   /* --- RangeSlider --- */
   .dash-slider-track { background-color:#2c2c2a !important; }
   .dash-slider-range { background-color:#3987e5 !important; }
@@ -441,19 +451,24 @@ if BASE != "/":
 
 
 def _layout_fig(title, height, ytitle, pct=False, legend=True):
-    # The title and the horizontal legend both sit above the plot, left-aligned,
-    # so they need separate bands: anchor each to an explicit edge (title to the
-    # container top, legend to the plot top) and reserve enough top margin for
-    # both. Mixing the two reference frames is what stacked them on one line.
-    top = 78 if legend else 46
+    # The title and the horizontal legend used to share the band above the plot.
+    # That band was a fixed 78px, but on a phone the legend wraps from one line
+    # to three (~54px) and printed itself back over the title. Sizing the band
+    # can't fix it, because how many lines the legend wraps to is a function of
+    # viewport width, which the server doesn't know.
+    #
+    # So give them separate sides: title alone above, legend below the plot.
+    # Now a wrapping legend grows down into the bottom margin, and the two can
+    # never collide at any width.
+    bottom = 76 if legend else 36
     fig = go.Figure()
     fig.update_layout(
-        title=dict(text=title, font=dict(size=15, color=INK2), x=0.01, xref="paper",
+        title=dict(text=title, font=dict(size=14, color=INK2), x=0.01, xref="paper",
                    y=1, yanchor="top", yref="container", pad=dict(t=14)),
         paper_bgcolor=SURFACE, plot_bgcolor=SURFACE, font=dict(color=MUTED, family=FONT),
-        margin=dict(l=62, r=24, t=top, b=36), height=height,
+        margin=dict(l=62, r=24, t=46, b=bottom), height=height,
         hovermode="x unified", showlegend=legend,
-        legend=dict(orientation="h", yref="paper", y=1, yanchor="bottom",
+        legend=dict(orientation="h", yref="paper", y=-0.16, yanchor="top",
                     x=0, xref="paper", font=dict(color=INK2, size=12),
                     bgcolor="rgba(0,0,0,0)"),
     )
@@ -561,7 +576,9 @@ def update(symbol, strategy, windows, cost):
     ]
 
     # equity chart
-    eq = _layout_fig(f"{symbol} · {strat.name} · {len(bars):,} bars", 430, "equity ($)")
+    # Plotly titles don't wrap, so this has to fit the narrowest plot we support
+    # (~294px on a 375px phone). Dropping the " bars" suffix is what buys the room.
+    eq = _layout_fig(f"{symbol} · {strat.name} · {len(bars):,}", 430, "equity ($)")
     eq.add_trace(go.Scatter(x=gross.equity.index, y=gross.equity, name="gross (zero cost)",
                             line=dict(color=MUTED, width=1.6), hovertemplate="$%{y:,.0f}<extra>gross</extra>"))
     eq.add_trace(go.Scatter(x=cheat.equity.index, y=cheat.equity, name="look-ahead (fantasy)",
@@ -575,7 +592,9 @@ def update(symbol, strategy, windows, cost):
     # underwater / drawdown chart (net strategy)
     peak = ev.equity.cummax()
     dd = ev.equity / peak - 1.0
-    uw = _layout_fig("drawdown — the pain you'd actually have felt (net)", 230,
+    # Short enough to survive a 393px phone without clipping; the y-axis label
+    # and the verdict panel below already carry the longer explanation.
+    uw = _layout_fig("drawdown (net)", 230,
                      "drawdown", pct=True, legend=False)
     uw.add_trace(go.Scatter(x=dd.index, y=dd, line=dict(color=CRIT, width=1.5),
                             fill="tozeroy", fillcolor="rgba(208,59,59,0.15)",
