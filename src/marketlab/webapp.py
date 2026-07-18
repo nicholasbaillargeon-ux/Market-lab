@@ -19,7 +19,7 @@ from pathlib import Path
 import plotly.graph_objects as go
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
 from dash.exceptions import PreventUpdate
-from flask import send_from_directory
+from flask import Response
 
 from .backtest import COST_PRESETS
 from .config import get_settings
@@ -169,7 +169,14 @@ def _numbox(label, ident, value):
         style={"display": "flex", "alignItems": "center", "gap": "6px"},
     )
 
-APP_BASE = "/app/"  # the dashboard; "/" is the landing page
+# Mount point. Standalone this app owns "/"; behind the combined reverse proxy
+# it is mounted under MARKETLAB_BASE_PATH (e.g. "/market-lab/").
+BASE = os.environ.get("MARKETLAB_BASE_PATH", "/")
+if not BASE.startswith("/"):
+    BASE = "/" + BASE
+if not BASE.endswith("/"):
+    BASE += "/"
+APP_BASE = BASE + "app/"  # the dashboard; BASE is the landing page
 
 app = Dash(__name__, title="marketlab — why backtests lie",
            update_title=None, suppress_callback_exceptions=True,
@@ -179,10 +186,15 @@ server = app.server  # for gunicorn / systemd
 _STATIC = Path(__file__).parent / "static"
 
 
-@server.route("/")
+@server.route(BASE)
 def landing():
     """The marketing page. Its call-to-action links through to APP_BASE."""
-    return send_from_directory(_STATIC, "landing.html")
+    html_text = (_STATIC / "landing.html").read_text(encoding="utf-8")
+    if BASE != "/":
+        # The bundled landing page hardcodes the dashboard link as "/app/";
+        # rewrite it to the mounted path so the CTA works behind the proxy.
+        html_text = html_text.replace("/app/", APP_BASE)
+    return Response(html_text, mimetype="text/html")
 
 # Dash 3 ships native Dropdown/Slider components (a <button> popover and a
 # custom slider -- no more react-select / rc-slider), and their default theme is
